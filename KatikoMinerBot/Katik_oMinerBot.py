@@ -1,12 +1,13 @@
 import config
 import draw
+import os
 import telebot
+import exceptions
+import constants
 import numpy as np
-from telebot import types
 
 bot = telebot.TeleBot(config.token)
-N, M = 0, 0
-Users = {}
+users = {}
 
 
 class GameField:
@@ -35,21 +36,21 @@ class GameField:
         self.won = False
         self.lost = False
 
-    def init_game_field(self, bomb_field_height, bomb_field_width, bombs_num, chat_id):
+    def init_game_field(self, user_arguments, chat_id):
         self.playing = True
-        self.bomb_field = np.zeros((bomb_field_height, bomb_field_width))
-        self.game_field = np.zeros((bomb_field_height, bomb_field_width))
-        self.user_field = np.array([-2] * (bomb_field_width * bomb_field_height))
-        self.user_field = np.resize(self.user_field, (bomb_field_height, bomb_field_width))
-        self.height = bomb_field_height
-        self.width = bomb_field_width
-        self.bombs = bombs_num
+        self.bomb_field = np.zeros((user_arguments.height, user_arguments.width))
+        self.game_field = np.zeros((user_arguments.height, user_arguments.width))
+        self.user_field = np.array([constants.EMPTY] * (user_arguments.width * user_arguments.height))
+        self.user_field = np.resize(self.user_field, (user_arguments.height, user_arguments.width))
+        self.height = user_arguments.height
+        self.width = user_arguments.width
+        self.bombs = user_arguments.bombs
         self.opened_cells = 0
         self.plant_bombs_()
         self.init_bomb_field_()
         self.won = False
         self.lost = False
-        self.picture.new_field('{}.jpg'.format(chat_id), bomb_field_height, bomb_field_width)
+        self.picture.new_field('{}.jpg'.format(chat_id), user_arguments.height, user_arguments.width)
 
     def plant_bombs_(self):
         self.bomb_field = np.hstack(self.bomb_field)
@@ -70,7 +71,7 @@ class GameField:
         sum_ = 0
         for i in (-1, 0, 1):
             for j in (-1, 0, 1):
-                if index_j + j >= 0 and index_j + j < self.width and index_i + i >= 0 and index_i + i < self.height:
+                if 0 <= index_j + j < self.width and 0 <= index_i + i < self.height:
                    sum_ += self.bomb_field[index_i + i][index_j + j]
         return sum_
 
@@ -89,12 +90,12 @@ class GameField:
 
     def open_cell(self, x, y):
         if self.user_field[x][y] == -1:
-            self.user_field[x][y] = -2
+            self.user_field[x][y] = constants.EMPTY
         if self.bomb_field[x][y] == 1:
             self.lost = True
             self.draw_lose_field(x, y)
             self.playing = False
-            return -1
+            return constants.LOSER
         elif self.game_field[x][y] != 0:
             self.user_field[x][y] = self.game_field[x][y]
             self.picture.draw_number(x, y, self.user_field[x][y])
@@ -105,12 +106,12 @@ class GameField:
             self.won = True
             self.draw_win_field()
             self.playing = False
-            return 1
+            return constants.WINNER
         else:
-            return 0
+            return constants.INPROGRESS
 
     def open_zero_cells(self, x, y):
-        if self.user_field[x][y] != -2:
+        if self.user_field[x][y] != constants.EMPTY:
             return
         self.user_field[x][y] = self.game_field[x][y]
         self.opened_cells += 1
@@ -127,77 +128,60 @@ class GameField:
             self.open_zero_cells(x, y + 1)
 
     def flag_cell(self, x, y):
-        if self.user_field[x][y] == -1:
+        if self.user_field[x][y] == constants.FLAGGED:
             return False
-        self.user_field[x][y] = -1
+        self.user_field[x][y] = constants.FLAGGED
         self.picture.draw_flag(x, y)
         return True
 
     def remove_flag_cell(self, x, y):
-        if self.user_field[x][y] == -1:
-            self.user_field[x][y] = -2
+        if self.user_field[x][y] == constants.FLAGGED:
+            self.user_field[x][y] = constants.EMPTY
             self.picture.remove_flag(x, y)
             return True
         return False
-
-    def win_field(self):
-        return str(self.user_field)
-
-    def lose_field(self):
-        return str(self.user_field)
 
     def __str__(self):
         return str(self.user_field)
 
 
-def parse_command_new_game(message):
-    splited_message = message.split(' ')
-    if len(splited_message) != 4 and len(splited_message) != 3:
-        return -1, -1, -1
-    else:
+class FieldParams:
+    def __init__(self, message_text):
+        splited_message = message_text.split(' ')
+        if len(splited_message) != 4 and len(splited_message) != 3:
+            raise exceptions.InputErrorException(Exception)
+        else:
             try:
-                height = int(splited_message[1])
+                self.width = int(splited_message[1])
             except ValueError:
-                return -1, -1, -1
+                raise exceptions.InputErrorException(Exception)
             try:
-                width = int(splited_message[2])
+                self.height = int(splited_message[2])
             except ValueError:
-                return -1, -1, -1
+                raise exceptions.InputErrorException(Exception)
             if len(splited_message) == 4:
                 try:
-                    bombs = int(splited_message[3])
+                    self.bombs = int(splited_message[3])
                 except ValueError:
-                    return -1, - 1, -1
+                    raise exceptions.InputErrorException(Exception)
             else:
-                bombs = max(1, int(0.25 * height * width))
-    return height, width, bombs
-
-
-def parse_command_open_flag(message, chat_id):
-    splited_message = message.split(' ')
-    if len(splited_message) != 3:
-        return -1, -1
-    else:
-        try:
-            x = int(splited_message[1]) - 1
-        except ValueError:
-            return -1, -1
-        try:
-            y = int(splited_message[2]) - 1
-        except ValueError:
-            return -1, -1
-    if x < 0 or x >= Users[chat_id].height:
-        return -1, -1
-    if y < 0 or y >= Users[chat_id].width:
-        return -1, -1
-    return x, y
+                self.bombs = max(1, int(0.25 * self.height * self.width))
+        
+        if self.height <= 0 or self.width <= 0:
+            raise exceptions.IncorrectParamsException(Exception)
+        if self.bombs >= self.width * self.height:
+            raise exceptions.TooManyBombsException(Exception)
+        if self.height > 15 or self.width > 15:
+            raise exceptions.TooLargeFieldException(Exception)
+        if self.bombs <= 0:
+            raise exceptions.NotEnoughBombsException(Exception)
 
 
 def registration_check(message):
-    if message.chat.id not in Users.keys():
+    if message.chat.id not in users.keys():
         bot.send_message(message.chat.id, 'Начните новую игру')
         return False
-    if not Users[message.chat.id].playing:
+    if not users[message.chat.id].playing:
         bot.send_message(message.chat.id, 'Начните новую игру')
         return False
     return True
@@ -206,72 +190,93 @@ def registration_check(message):
 @bot.message_handler(commands=['start'])
 def start(message):
     bot.send_sticker(message.chat.id, data='CAADAgADCBMAAkKvaQABJS_tlanrZB8C')
-    bot.send_message(message.chat.id, 'Привет, ' + message.from_user.first_name + '!')
-    Users[message.chat.id] = GameField()
+    bot.send_message(message.chat.id, constants.HELP_MESSAGE)
+    users[message.chat.id] = GameField()
 
 
 @bot.message_handler(commands=['new'])
 def new_game_check(message):
-    if message.chat.id not in Users.keys():
-        Users[message.chat.id] = GameField()
-    bomb_field_height, bomb_field_width, bombs_num = parse_command_new_game(message.text)
-    bomb_field_height, bomb_field_width = bomb_field_width, bomb_field_height
-    if bomb_field_height == -1:
+    if message.chat.id not in users.keys():
+        users[message.chat.id] = GameField()
+    try:
+        user_arguments = FieldParams(message.text)
+    except exceptions.InputErrorException:
         bot.send_message(message.chat.id, 'Ошибка ввода')
         return
-    if bombs_num >= bomb_field_width * bomb_field_height:
+    except exceptions.TooManyBombsException:
         bot.send_message(message.chat.id, "Слишком много бомб")
         return
-    if bomb_field_height > 15 or bomb_field_width > 15:
+    except exceptions.TooLargeFieldException:
         bot.send_message(message.chat.id, "Слишком большое поле : размеры должны быть меньше 16")
         return
-    if bomb_field_height <= 0 or bomb_field_width <= 0:
+    except exceptions.IncorrectParamsException:
         bot.send_message(message.chat.id, "Некорректный размер поля")
         return
-    if bombs_num <= 0:
+    except exceptions.NotEnoughBombsException:
         bot.send_message(message.chat.id, "Маловато бомб")
         return
-    if bombs_num % 10 == 1 and bombs_num != 11:
-        bot.send_message(message.chat.id, 'На поле {} бомба'.format(bombs_num))
-    elif bombs_num % 10 >= 2 and bombs_num % 10 <= 4 and (bombs_num <= 10 or bombs_num >= 20):
-        bot.send_message(message.chat.id, 'Ha поле {} бомбы'.format(bombs_num))
+    if user_arguments.bombs % 10 == 1 and user_arguments.bombs != 11:
+        bot.send_message(message.chat.id, 'На поле {} бомба'.format(user_arguments.bombs))
+    elif 2 <= user_arguments.bombs % 10 <= 4 and (user_arguments.bombs <= 10 or user_arguments.bombs >= 20):
+        bot.send_message(message.chat.id, 'Ha поле {} бомбы'.format(user_arguments.bombs))
     else:
-        bot.send_message(message.chat.id, 'Ha поле {} бомб'.format(bombs_num))
-    Users[message.chat.id].init_game_field(bomb_field_width, bomb_field_height, bombs_num, message.chat.id)
-    photo = open('users/{}.jpg'.format(message.chat.id), 'rb')
-    bot.send_photo(message.chat.id, photo)
+        bot.send_message(message.chat.id, 'Ha поле {} бомб'.format(user_arguments.bombs))
+    users[message.chat.id].init_game_field(user_arguments, message.chat.id)
+    with open('/'.join([os.getcwd(), 'users/{}.jpg'.format(message.chat.id)]), 'rb') as photo:
+        bot.send_photo(message.chat.id, photo)
+
+
+class ActionParams:
+    def __init__(self, message_text, message_id):
+        splited_message = message_text.split(' ')
+        if len(splited_message) != 3:
+            raise exceptions.InputErrorException(Exception)
+        else:
+            try:
+                self.x = int(splited_message[1]) - 1
+            except ValueError:
+                raise exceptions.InputErrorException(Exception)
+            try:
+                self.y = int(splited_message[2]) - 1
+            except ValueError:
+                raise InputErrorException(Exception)
+        if self.x < 0 or self.x >= users[message_id].height:
+            raise exceptions.IncorrectParamsException(Exception)
+        if self.y < 0 or self.y >= users[message_id].width:
+            raise exceptions.IncorrectParamsException(Exception)
 
 
 @bot.message_handler(commands=['open'])
 def open_cell_check(message):
     if not registration_check(message):
         return
-    x, y = parse_command_open_flag(message.text, message.chat.id)
-    if x == -1 or y == -1:
+    try:
+        open_params = ActionParams(message.text, message.chat.id)
+    except (exceptions.InputErrorException, exceptions.IncorrectParamsException):
         bot.send_message(message.chat.id, 'Ошибка ввода')
         return
-    if Users[message.chat.id].user_field[x][y] == -1:
-        question_message_open_flagged(message.chat.id, x, y)
-    elif Users[message.chat.id].user_field[x][y] != -2:
+    if users[message.chat.id].user_field[open_params.x][open_params.y] == constants.FLAGGED:
+        question_message_open_flagged(message.chat.id, open_params.x, open_params.y)
+    elif users[message.chat.id].user_field[open_params.x][open_params.y] != constants.EMPTY:
         bot.send_message(message.chat.id, 'Ячейка уже открыта')
     else:
-        open_cell(message.chat.id, x, y)
+        open_cell(message.chat.id, open_params.x, open_params.y)
 
 
 def open_cell(chat_id, x, y):
-    result = Users[chat_id].open_cell(x, y)
-    photo = open('users/{}.jpg'.format(chat_id), 'rb')
-    if result == -1:
-        bot.send_message(chat_id, 'Бууум! Ты проиграл!')
+    result = users[chat_id].open_cell(x, y)
+    with open('/'.join([os.getcwd(), 'users/{}.jpg'.format(chat_id)]), 'rb') as photo:
+        if result == constants.LOSER:
+            bot.send_message(chat_id, 'Бууум! Ты проиграл!')
+            bot.send_photo(chat_id, photo)
+            bot.send_sticker(chat_id, data='CAADAgAD7wADcqrmBE6HbRTJbkh-Ag')
+            return
+        elif result == constants.WINNER:
+            bot.send_message(chat_id, 'С победой!')
+            bot.send_photo(chat_id, photo)
+            bot.send_sticker(chat_id, data='CAADAgADBwQAAnKq5gTVZI_e9jff8wI')
+            return
         bot.send_photo(chat_id, photo)
-        bot.send_sticker(chat_id, data='CAADAgAD7wADcqrmBE6HbRTJbkh-Ag')
-        return
-    elif result == 1:
-        bot.send_message(chat_id, 'С победой!')
-        bot.send_photo(chat_id, photo)
-        bot.send_sticker(chat_id, data='CAADAgADBwQAAnKq5gTVZI_e9jff8wI')
-        return
-    bot.send_photo(chat_id, photo)
 
 
 def question_message_open_flagged(chat_id, x, y):
@@ -298,36 +303,43 @@ def inline(ans):
 def flag_cell(message):
     if not registration_check(message):
         return
-    x, y = parse_command_open_flag(message.text, message.chat.id)
-    if x == -1 or y == -1:
+    try:
+        flag_params = ActionParams(message.text, message.chat.id)
+    except (exceptions.IncorrectParamsException, exceptions.InputErrorException):
         bot.send_message(message.chat.id, 'Ошибка ввода')
         return
-    if Users[message.chat.id].user_field[x][y] != -2:
+    if users[message.chat.id].user_field[flag_params.x][flag_params.y] != constants.EMPTY:
         bot.send_message(message.chat.id, "Ячейка уже открыта")
         return
-    if not Users[message.chat.id].flag_cell(x, y):
+    if not users[message.chat.id].flag_cell(flag_params.x, flag_params.y):
         bot.send_message(message.chat.id, 'В этой ячейке уже есть флажок')
     else:
-        photo = open('users/{}.jpg'.format(message.chat.id), 'rb')
-        bot.send_photo(message.chat.id, photo)
+        with open('/'.join([os.getcwd(), 'users/{}.jpg'.format(message.chat.id)]), 'rb') as photo:
+            bot.send_photo(message.chat.id, photo)
 
 
 @bot.message_handler(commands=['remove_flag'])
 def remove_flag_cell(message):
     if not registration_check(message):
         return
-    x, y = parse_command_open_flag(message.text, message.chat.id)
-    if x == -1 or y == -1:
+    try:
+        remove_params =  ActionParams(message.text, message.chat.id)
+    except (exceptions.InputErrorExceptionm, exceptions.IncorrectParamsException):
         bot.send_message(message.chat.id, 'Ошибка ввода')
         return
-    if not Users[message.chat.id].remove_flag_cell(x, y):
+    if not users[message.chat.id].remove_flag_cell(remove_params.x, remove_params.y):
         bot.send_message(message.chat.id, 'В этой ячейке нет флажка')
         return
-    photo = open('users/{}.jpg'.format(message.chat.id), 'rb')
-    bot.send_photo(message.chat.id, photo)
+    with open('/'.join([os.getcwd(), 'users/{}.jpg'.format(message.chat.id)]), 'rb') as photo:
+        bot.send_photo(message.chat.id, photo)
 
 
-@bot.message_handler(content_types=['sticker'])
+@bot.message_handler(command='help')
+def help_(message):
+    bot.send_message(message.chat.id, constants.HELP_MESSAGE)
+
+
+@bot.message_handler()
 def wrong_command(message):
     bot.send_message(message.chat.id, 'Ошибка ввода')
 
