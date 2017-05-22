@@ -1,10 +1,11 @@
 from PIL import Image, ImageDraw
+import os
 
 LineWidth = 3
 
 
 class PicField:
-    def __init_(self):
+    def __init__(self):
         self.step = 0
         self.pic_height = 0
         self.pic_width = 0
@@ -37,35 +38,35 @@ class PicField:
                            width=LineWidth)
 
     def draw_number(self, x, y, number):
-        num_pic = Image.open('numbers/{}.jpg'.format(str(number)))
+        num_pic = Image.open('/'.join([os.getcwd(), 'numbers/{}.jpg'.format(str(number))]))
         num_pic = num_pic.resize((self.step - 2 * LineWidth + 1, self.step -
                                   2 * LineWidth + 1))
         self.image.paste(num_pic, box=(self.step * y + 3, self.step * x + 3))
         self.image.save(self.pic_name, 'JPEG')
 
     def draw_bomb(self, x, y):
-        bomb_pic = Image.open('bombs/bomb.jpg')
+        bomb_pic = Image.open('/'.join([os.getcwd(), 'bombs/bomb.jpg']))
         bomb_pic = bomb_pic.resize((self.step - 2 * LineWidth + 1, self.step -
                                     2 * LineWidth + 1))
         self.image.paste(bomb_pic, box=(self.step * y + 3, self.step * x + 3))
         self.image.save(self.pic_name, 'JPEG')
 
     def draw_exploded_bomb(self, x, y):
-        bomb_pic = Image.open('bombs/ex_bomb.jpg')
+        bomb_pic = Image.open('/'.join([os.getcwd(), 'bombs/ex_bomb.jpg']))
         bomb_pic = bomb_pic.resize((self.step - 2 * LineWidth + 1, self.step -
                                     2 * LineWidth + 1))
         self.image.paste(bomb_pic, box=(self.step * y + 3, self.step * x + 3))
         self.image.save(self.pic_name, 'JPEG')
 
     def draw_flag(self, x, y):
-        flag_pic = Image.open('flags/flag.jpg')
+        flag_pic = Image.open('/'.join([os.getcwd(), 'flags/flag.jpg']))
         flag_pic = flag_pic.resize((self.step - 2 * LineWidth + 1, self.step -
                                     2 * LineWidth + 1))
         self.image.paste(flag_pic, box=(self.step * y + 3, self.step * x + 3))
         self.image.save(self.pic_name, 'JPEG')
 
     def remove_flag(self, x, y):
-        flag_pic = Image.open('flags/remove_flag.jpg')
+        flag_pic = Image.open('/'.join([os.getcwd(), 'flags/remove_flag.jpg']))
         flag_pic = flag_pic.resize((self.step - 2 * LineWidth + 1, self.step -
                                     2 * LineWidth + 1))
         self.image.paste(flag_pic, box=(self.step * y + 3, self.step * x + 3))
